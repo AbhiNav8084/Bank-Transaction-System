@@ -2,6 +2,7 @@ const transactionModel = require("../models/transaction.model");
 const ledgerModel = require("../models/ledger.model");
 const accountModel = require("../models/account.model")
 const emailService = require("../services/email.service")
+const mongoose = require("mongoose")
 
 
 /**
@@ -92,5 +93,17 @@ async function createTransaction(req, res) {
         })
     }
 
-}
+    /**
+     * - 4. Derive sender balance from ledger
+     */
 
+    const balance = await fromUserAccount.getBalance()
+
+    if(balance < amount ){
+        return res.status(400).json({
+            message: `Insufficient balance, Current balance is ${balance}. Requested amount is ${amount}`
+        })
+    }
+    let transaction;
+    
+}
