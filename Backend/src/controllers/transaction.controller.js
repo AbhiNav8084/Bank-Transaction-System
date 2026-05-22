@@ -1,5 +1,5 @@
-const transactionModel = require("../models/transaction.model");
-const ledgerModel = require("../models/ledger.model");
+const {transactionModel} = require("../models/transaction.model");
+const {ledgerModel} = require("../models/ledger.model");
 const accountModel = require("../models/account.model")
 const emailService = require("../services/email.service")
 const mongoose = require("mongoose")
@@ -99,18 +99,18 @@ async function createTransaction(req, res) {
 
     const balance = await fromUserAccount.getBalance()
 
-    if(balance < amount ){
+    if (balance < amount) {
         return res.status(400).json({
             message: `Insufficient balance, Current balance is ${balance}. Requested amount is ${amount}`
         })
     }
-    
+
 
     /**
      * - 5. Create transaction (PENDING)
      */
 
-    const session =await mongoose.startSession()
+    const session = await mongoose.startSession()
     session.startTransaction()
 
     const transaction = await transactionModel.create({
@@ -118,21 +118,21 @@ async function createTransaction(req, res) {
         toAccount,
         idempotencyKey,
         status: "PENDING"
-    },{ session })
+    }, { session })
 
     const debitLedgerEntry = await ledgerModel.create({
         account: fromAccount,
         amount: amount,
         transaction: transaction._id,
         type: "DEBIT",
-    },{ session })
+    }, { session })
 
     const creditLedgerEntry = await ledgerModel.create({
         account: toAccount,
         amount: amount,
         transaction: transaction._id,
         type: "CREDIT"
-    },{ session })
+    }, { session })
 
     transaction.status = "COMPLETED"
     await transaction.save({ session })
@@ -143,7 +143,7 @@ async function createTransaction(req, res) {
     /**
      * - 10. Send email notification
      */
-    
+
     await emailService.sendRegistrationEmail(req.user.email, req.user.name, amount, toAccount)
 
     return res.status(201).json({
@@ -153,7 +153,6 @@ async function createTransaction(req, res) {
 }
 
 async function createInitialFundsTransaction(req, res) {
-    
     const { toAccount, amount, idempotencyKey } = req.body
 
     if (!toAccount || !amount || !idempotencyKey) {
@@ -183,8 +182,46 @@ async function createInitialFundsTransaction(req, res) {
     }
 
 
+    const session = await mongoose.startSession()
+    session.startTransaction()
+
+    const transaction = new transactionModel({
+        fromAccount: fromUserAccount._id,
+        toAccount,
+        amount,
+        idempotencyKey,
+        status: "PENDING"
+    })
+
+    const debitLedgerEntry = await ledgerModel.create([ {
+        account: fromUserAccount._id,
+        amount: amount,
+        transaction: transaction._id,
+        type: "DEBIT"
+    } ], { session })
+
+    const creditLedgerEntry = await ledgerModel.create([ {
+        account: toAccount,
+        amount: amount,
+        transaction: transaction._id,
+        type: "CREDIT"
+    } ], { session })
+
+    transaction.status = "COMPLETED"
+    await transaction.save({ session })
+
+    await session.commitTransaction()
+    session.endSession()
+
+    return res.status(201).json({
+        message: "Initial funds transaction completed successfully",
+        transaction: transaction
+    })
+
+
 }
 
 module.exports = {
-    createTransaction
+    createTransaction,
+    createInitialFundsTransaction
 }
